@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1e3a5f">
+<link rel="manifest" href="manifest.json">
+<title>Acompanhamento de Projetos</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:#f1f4f8;color:#1c2733}
+header{background:#1e3a5f;color:#fff;padding:12px 16px;display:flex;gap:12px;align-items:center}
+header h1{font-size:18px;margin:0;flex:1}header button{background:none;border:1px solid #fff6;color:#fff;border-radius:6px;padding:6px 10px;cursor:pointer}
+main{padding:16px;max-width:1200px;margin:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px #0002;cursor:pointer}
+.card h3{margin:0 0 10px;font-size:15px}
+.bar{height:10px;background:#e3e8ef;border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:#2e9d5b}
+.meta{display:flex;justify-content:space-between;font-size:13px;margin-top:8px;color:#4a5a6a}
+.tabs{display:flex;gap:4px;overflow-x:auto;margin-bottom:12px}
+.tabs button{border:0;padding:8px 14px;border-radius:8px 8px 0 0;background:#d5dde7;cursor:pointer;white-space:nowrap}
+.tabs button.on{background:#1e3a5f;color:#fff}
+.resumo{background:#fff;border-radius:10px;padding:12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:16px;font-size:14px}
+.tbl{overflow-x:auto;background:#fff;border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:7px 8px;border-bottom:1px solid #e6ebf1;text-align:left}th{background:#e9eef4;position:sticky;top:0}
+tr.pai{background:#f5f8fc;font-weight:600}tr.bloq{color:#9aa5b1}
+td.tg{cursor:pointer;width:24px;user-select:none}
+input{width:64px;padding:4px;border:1px solid #c7d0da;border-radius:4px}input:disabled{background:#eee}
+.mini{width:90px;display:inline-block;vertical-align:middle;margin-left:6px}
+#loading{position:fixed;inset:0;background:#fff9;display:flex;align-items:center;justify-content:center;font-size:18px}
+.hidden{display:none!important}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 16px;border-radius:6px}
+</style>
+</head>
+<body>
+<header><h1 id="titulo">Projetos</h1><button id="btnHome" class="hidden">⌂ Início</button><button id="btnSync">⟳</button></header>
+<main id="app"></main>
+<div id="loading">Carregando…</div>
+<div id="toast" class="hidden"></div>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbyaQ1ZEtGFO_XgI1wprpnnQ6PLObn1irw40CaCAnYUu4Q66V4-4iWxC4bUQjyVRIpiW/exec';
+const LIMIAR = 100; // % mínimo da predecessora para liberar a sucessora
+
+let projetos = [];
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const paiId = id => id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : null;
+const lista = s => s ? s.split(/[;,\s]+/).filter(Boolean) : [];
+const fmt = n => (Math.round(n * 10) / 10).toLocaleString('pt-BR');
+
+// ---------- CÁLCULO ----------
+function calcular(p) {
+  const map = {};
+  p.rows.forEach(r => { r.filhos = []; r.fim = null; map[r.id] = r; });
+  p.rows.forEach(r => map[paiId(r.id)]?.filhos.push(r));
+
+  // prazo e % dos itens pai (peso = prazo)
+  [...p.rows].sort((a, b) => b.id.split('.').length - a.id.split('.').length).forEach(r => {
+    if (r.filhos.length) {
+      const t = r.filhos.reduce((s, f) => s + f.prazoC, 0);
+      r.prazoC = t;
+      r.pctC = t ? r.filhos.reduce((s, f) => s + f.prazoC * f.pctC, 0) / t : 0;
+    } else { r.prazoC = r.prazo; r.pctC = r.pct; }
+  });
+
+  // predecessoras efetivas (próprias + herdadas dos pais)
+  const predsEf = r => {
+    let l = lista(r.pred), a = map[paiId(r.id)];
+    while (a) { l = l.concat(lista(a.pred)); a = map[paiId(a.id)]; }
+    return l.filter(id => map[id] && id !== r.id);
+  };
+  p.rows.forEach(r => r.bloq = predsEf(r).some(id => map[id].pctC < LIMIAR));
+
+  // passagem progressiva: respeita predecessoras e 1 atividade por vez por equipe
+  const livre = {}, visit = new Set();
+  const fimDe = id => {
+    const r = map[id];
+    if (r.fim != null) return r.fim;
+    if (visit.has(id)) return 0; // evita ciclo
+    visit.add(id);
+    if (r.filhos.length) return r.fim = Math.max(0, ...r.filhos.map(f => fimDe(f.id)));
+    const resto = r.prazo * (1 - Math.min(r.pct, 100) / 100);
+    const inicioPred = Math.max(0, ...predsEf(r).map(fimDe));
+    if (resto <= 0) return r.fim = 0;
+    const eq = r.equipe || '—';
+    r.fim = Math.max(inicioPred, livre[eq] || 0) + resto;
+    livre[eq] = r.fim;
+    return r.fim;
+  };
+  const folhas = p.rows.filter(r => !r.filhos.length);
+  folhas.forEach(f => fimDe(f.id));
+
+  const raiz = p.rows.filter(r => !paiId(r.id) || !map[paiId(r.id)]);
+  const tot = raiz.reduce((s, r) => s + r.prazoC, 0);
+  p.pct = tot ? raiz.reduce((s, r) => s + r.prazoC * r.pctC, 0) / tot : 0;
+  p.dias = Math.ceil(Math.max(0, ...folhas.map(f => f.fim)));
+  p.equipes = {};
+  folhas.forEach(f => { const e = f.equipe || '—'; p.equipes[e] = Math.max(p.equipes[e] || 0, f.fim); });
+  p.map = map;
+}
+
+// ---------- API ----------
+async function carregar() {
+  $('#loading').classList.remove('hidden');
+  try {
+    const res = await fetch(`${API_URL}?action=all`);
+    projetos = await res.json();
+    projetos.forEach(calcular);
+    rota();
+  } catch (e) { console.error(e); toast('Erro ao carregar dados'); }
+  $('#loading').classList.add('hidden');
+}
+
+async function salvar(project, id, field, value) {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ project, id, field, value })
+    });
+    const r = await res.json();
+    toast(r.ok ? 'Salvo ✔' : 'Falha ao salvar');
+  } catch (e) { console.error(e); toast('Sem conexão – não salvo'); }
+}
+
+// ---------- TELAS ----------
+const barra = pct => `<div class="bar"><i style="width:${Math.min(pct,100)}%"></i></div>`;
+
+function home() {
+  $('#titulo').textContent = 'Projetos';
+  $('#btnHome').classList.add('hidden');
+  $('#app').innerHTML = `<div class="cards">${projetos.map((p, i) => `
+    <div class="card" onclick="location.hash='p=${i}'">
+      <h3>${esc(p.nome)}</h3>${barra(p.pct)}
+      <div class="meta"><span>${fmt(p.pct)}%</span><span>${p.dias} dia(s) restantes</span></div>
+    </div>`).join('')}</div>`;
+}
+
+const colKey = (p, id) => `col|${p.nome}|${id}`;
+const oculto = (p, r) => { let a = paiId(r.id); while (a) { if (localStorage[colKey(p, a)]) return true; a = paiId(a); } return false; };
+
+function projeto(i) {
+  const p = projetos[i];
+  if (!p) return home();
+  $('#titulo').textContent = p.nome;
+  $('#btnHome').classList.remove('hidden');
+  const eqs = Object.entries(p.equipes).map(([e, d]) => `${esc(e)}: <b>${Math.ceil(d)}d</b>`).join(' · ');
+  $('#app').innerHTML = `
+    <div class="tabs">${projetos.map((q, j) => `<button class="${j == i ? 'on' : ''}" onclick="location.hash='p=${j}'">${esc(q.nome)}</button>`).join('')}</div>
+    <div class="resumo">
+      <span>Executado: <b>${fmt(p.pct)}%</b></span>
+      <span>Restante: <b>${p.dias} dia(s)</b></span>
+      <span>Por equipe: ${eqs || '—'}</span>
+      <span><a href="#" onclick="todos(${i},true);return false">Ocultar sub-itens</a> · <a href="#" onclick="todos(${i},false);return false">Exibir todos</a></span>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th></th><th>ID</th><th>Descrição da atividade</th><th>Predecessora</th><th>Prazo (d)</th><th>Equipe</th><th>% Executada</th></tr></thead>
+      <tbody>${p.rows.filter(r => !oculto(p, r)).map(r => linha(p, i, r)).join('')}</tbody>
+    </table></div>`;
+}
+
+function linha(p, i, r) {
+  const pai = r.filhos.length > 0;
+  const tg = pai ? (localStorage[colKey(p, r.id)] ? '▸' : '▾') : '';
+  const ind = (r.id.split('.').length - 1) * 16;
+  const prazo = pai ? fmt(r.prazoC)
+    : `<input type="number" min="0" step="0.5" value="${r.prazo}" onchange="editar(${i},'${r.id}','prazo',this.value)">`;
+  const pct = pai ? `${fmt(r.pctC)}%`
+    : `<input type="number" min="0" max="100" value="${r.pct}" ${r.bloq ? 'disabled title="Aguardando predecessora"' : ''} onchange="editar(${i},'${r.id}','pct',this.value)">%`;
+  return `<tr class="${pai ? 'pai' : ''} ${r.bloq ? 'bloq' : ''}">
+    <td class="tg" onclick="toggle(${i},'${r.id}')">${tg}</td>
+    <td>${esc(r.id)}</td>
+    <td style="padding-left:${8 + ind}px">${r.bloq ? '🔒 ' : ''}${esc(r.descricao)}</td>
+    <td>${esc(r.pred)}</td><td>${prazo}</td><td>${esc(r.equipe)}</td>
+    <td>${pct}<span class="mini">${barra(r.pctC)}</span></td></tr>`;
+}
+
+function editar(i, id, field, v) {
+  const p = projetos[i], r = p.map[id];
+  v = Math.max(0, Number(v) || 0);
+  if (field === 'pct') v = Math.min(v, 100);
+  r[field] = v;
+  calcular(p);
+  projeto(i);
+  salvar(p.nome, id, field, v);
+}
+
+function toggle(i, id) {
+  const k = colKey(projetos[i], id);
+  localStorage[k] ? localStorage.removeItem(k) : localStorage.setItem(k, 1);
+  projeto(i);
+}
+
+function todos(i, ocultar) {
+  const p = projetos[i];
+  p.rows.filter(r => r.filhos.length).forEach(r => ocultar ? localStorage.setItem(colKey(p, r.id), 1) : localStorage.removeItem(colKey(p, r.id)));
+  projeto(i);
+}
+
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.add('hidden'), 2500); }
+
+function rota() { const m = location.hash.match(/p=(\d+)/); m ? projeto(+m[1]) : home(); }
+
+window.addEventListener('hashchange', rota);
+$('#btnHome').onclick = () => location.hash = '';
+$('#btnSync').onclick = carregar;
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+carregar();
+</script>
+</body>
+</html>
