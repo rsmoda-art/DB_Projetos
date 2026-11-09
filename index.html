@@ -23,7 +23,8 @@ main{padding:16px;max-width:1400px;margin:auto}
 .tbl{overflow-x:auto;background:#fff;border-radius:10px}
 table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{padding:7px 8px;border-bottom:1px solid #e6ebf1;text-align:left;white-space:nowrap}th{background:#e9eef4;position:sticky;top:0}
-td.desc{white-space:normal;min-width:180px}
+td.desc{white-space:normal;min-width:280px;max-width:420px}
+td.eqc{white-space:normal;width:110px;max-width:110px;line-height:1.6}
 tr.pai{background:#f5f8fc;font-weight:600}tr.bloq{color:#9aa5b1}
 td.tg{cursor:pointer;width:24px;user-select:none}
 input,select{padding:4px;border:1px solid #c7d0da;border-radius:4px}input{width:64px}input[type=date]{width:130px}input:disabled{background:#eee}
@@ -237,7 +238,7 @@ function linha(p, i, r) {
     <td class="tg" onclick="toggle(${i},'${idq}')">${tg}</td>
     <td>${esc(r.id)}</td>
     <td class="desc" style="padding-left:${8 + ind}px">${r.bloq ? '🔒 ' : ''}${esc(r.descricao)}</td>
-    <td>${equipe}</td>
+    <td class="eqc">${equipe}</td>
     <td>${esc(r.pred)}</td>
     <td>${pai ? fmt(r.prazoC) : inp('prazo', 'number', r.prazo, 'min="0" step="0.5"')}</td>
     <td>${pai ? fmt(r.pctC) + '%' : inp('pct', 'number', r.pct, `min="0" max="100" ${dis}`) + '%'}<span class="mini">${barra(r.pctC)}</span></td>
