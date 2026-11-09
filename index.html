@@ -10,7 +10,7 @@
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:#f1f4f8;color:#1c2733}
 header{background:#1e3a5f;color:#fff;padding:12px 16px;display:flex;gap:12px;align-items:center}
 header h1{font-size:18px;margin:0;flex:1}header button{background:none;border:1px solid #fff6;color:#fff;border-radius:6px;padding:6px 10px;cursor:pointer}
-main{padding:16px;max-width:1200px;margin:auto}
+main{padding:16px;max-width:1400px;margin:auto}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px #0002;cursor:pointer}
 .card h3{margin:0 0 10px;font-size:15px}
@@ -19,14 +19,18 @@ main{padding:16px;max-width:1200px;margin:auto}
 .tabs{display:flex;gap:4px;overflow-x:auto;margin-bottom:12px}
 .tabs button{border:0;padding:8px 14px;border-radius:8px 8px 0 0;background:#d5dde7;cursor:pointer;white-space:nowrap}
 .tabs button.on{background:#1e3a5f;color:#fff}
-.resumo{background:#fff;border-radius:10px;padding:12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:16px;font-size:14px}
+.resumo{background:#fff;border-radius:10px;padding:12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:16px;font-size:14px;align-items:center}
 .tbl{overflow-x:auto;background:#fff;border-radius:10px}
 table{border-collapse:collapse;width:100%;font-size:13px}
-th,td{padding:7px 8px;border-bottom:1px solid #e6ebf1;text-align:left}th{background:#e9eef4;position:sticky;top:0}
+th,td{padding:7px 8px;border-bottom:1px solid #e6ebf1;text-align:left;white-space:nowrap}th{background:#e9eef4;position:sticky;top:0}
+td.desc{white-space:normal;min-width:180px}
 tr.pai{background:#f5f8fc;font-weight:600}tr.bloq{color:#9aa5b1}
 td.tg{cursor:pointer;width:24px;user-select:none}
-input{width:64px;padding:4px;border:1px solid #c7d0da;border-radius:4px}input:disabled{background:#eee}
-.mini{width:90px;display:inline-block;vertical-align:middle;margin-left:6px}
+input,select{padding:4px;border:1px solid #c7d0da;border-radius:4px}input{width:64px}input[type=date]{width:130px}input:disabled{background:#eee}
+.mini{width:70px;display:inline-block;vertical-align:middle;margin-left:6px}
+.eq{display:inline-block;background:#e1ecf8;color:#1e3a5f;border-radius:10px;padding:1px 8px;margin:1px;font-size:12px}
+.tag{display:inline-block;border-radius:4px;padding:2px 6px;margin:1px;font-size:11px;color:#fff;font-weight:600}
+.t-ini{background:#d4a017}.t-atr{background:#c0392b}.t-proj{background:#e67e22}.t-est{background:#8e44ad}.t-ok{background:#2e9d5b}
 #loading{position:fixed;inset:0;background:#fff9;display:flex;align-items:center;justify-content:center;font-size:18px}
 .hidden{display:none!important}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 16px;border-radius:6px}
@@ -42,29 +46,76 @@ input{width:64px;padding:4px;border:1px solid #c7d0da;border-radius:4px}input:di
 const API_URL = 'https://script.google.com/macros/s/AKfycbyaQ1ZEtGFO_XgI1wprpnnQ6PLObn1irw40CaCAnYUu4Q66V4-4iWxC4bUQjyVRIpiW/exec';
 const LIMIAR = 1; // % mínimo da predecessora para liberar a sucessora
 
-let projetos = [];
+let projetos = [], filtroEq = {};
 const $ = s => document.querySelector(s);
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const paiId = id => id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : null;
 const lista = s => s ? s.split(/[;,\s]+/).filter(Boolean) : [];
+const listaEq = s => { const l = String(s || '').split(';').map(x => x.trim()).filter(Boolean); return l.length ? l : ['—']; };
 const fmt = n => (Math.round(n * 10) / 10).toLocaleString('pt-BR');
+
+// ---------- DATAS ----------
+const hoje = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
+const toD = s => { if (!s) return null; const [y, m, d] = s.split('-'); return new Date(y, m - 1, d); };
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const diff = (a, b) => Math.round((b - a) / 864e5);
+const br = s => s ? s.split('-').reverse().join('/') : '';
+const minD = a => a.filter(Boolean).sort()[0] || '';
+const maxD = a => a.filter(Boolean).sort().pop() || '';
+
+// ---------- ALERTAS ----------
+function alertas(r, H) {
+  const s = [], ip = toD(r.iniPlan), ir = toD(r.iniReal), fr = toD(r.fimReal);
+  if (ip) {
+    if (ir && ir > ip) s.push({ t: 'ini', x: `Início atrasado ${diff(ip, ir)}d` });
+    else if (!ir && H > ip) s.push({ t: 'ini', x: `Não iniciado (+${diff(ip, H)}d)` });
+  }
+  if (ir && !fr && r.pct < 100) {
+    const dec = diff(ir, H);
+    if (dec > r.prazo) s.push({ t: 'atr', x: `Em atraso ${fmt(dec - r.prazo)}d` });
+    else if (r.pct > 0 && dec > 0) {
+      const proj = dec * 100 / r.pct;
+      if (proj > r.prazo) s.push({ t: 'proj', x: `Projeção +${fmt(proj - r.prazo)}d` });
+    }
+  }
+  if (ir && fr) { const dur = diff(ir, fr); if (dur > r.prazo) s.push({ t: 'est', x: `Estouro +${fmt(dur - r.prazo)}d` }); }
+  return s;
+}
+
+function restante(r, H) {
+  if (r.pct >= 100 || r.fimReal) return 0;
+  const plano = r.prazo * (1 - r.pct / 100);
+  if (r.iniReal && r.pct > 0) {
+    const dec = diff(toD(r.iniReal), H);
+    if (dec > 0) return dec * (100 - r.pct) / r.pct; // projeção pelo ritmo real
+  }
+  return plano;
+}
 
 // ---------- CÁLCULO ----------
 function calcular(p) {
-  const map = {};
+  const map = {}, H = hoje();
   p.rows.forEach(r => { r.filhos = []; r.fim = null; map[r.id] = r; });
   p.rows.forEach(r => map[paiId(r.id)]?.filhos.push(r));
 
-  // prazo e % dos itens pai (peso = prazo)
   [...p.rows].sort((a, b) => b.id.split('.').length - a.id.split('.').length).forEach(r => {
-    if (r.filhos.length) {
-      const t = r.filhos.reduce((s, f) => s + f.prazoC, 0);
+    const f = r.filhos;
+    if (f.length) {
+      const t = f.reduce((s, x) => s + x.prazoC, 0);
       r.prazoC = t;
-      r.pctC = t ? r.filhos.reduce((s, f) => s + f.prazoC * f.pctC, 0) / t : 0;
-    } else { r.prazoC = r.prazo; r.pctC = r.pct; }
+      r.pctC = t ? f.reduce((s, x) => s + x.prazoC * x.pctC, 0) / t : 0;
+      r.iniPlanC = minD(f.map(x => x.iniPlanC));
+      r.iniRealC = minD(f.map(x => x.iniRealC));
+      r.fimRealC = f.every(x => x.fimRealC) ? maxD(f.map(x => x.fimRealC)) : '';
+      r.alertas = f.flatMap(x => x.alertas);
+      r.eqSet = new Set(f.flatMap(x => [...x.eqSet]));
+    } else {
+      Object.assign(r, { prazoC: r.prazo, pctC: r.pct, iniPlanC: r.iniPlan, iniRealC: r.iniReal, fimRealC: r.fimReal });
+      r.alertas = alertas(r, H);
+      r.eqSet = new Set(listaEq(r.equipe));
+    }
   });
 
-  // predecessoras efetivas (próprias + herdadas dos pais)
   const predsEf = r => {
     let l = lista(r.pred), a = map[paiId(r.id)];
     while (a) { l = l.concat(lista(a.pred)); a = map[paiId(a.id)]; }
@@ -72,31 +123,33 @@ function calcular(p) {
   };
   p.rows.forEach(r => r.bloq = predsEf(r).some(id => map[id].pctC < LIMIAR));
 
-  // passagem progressiva: respeita predecessoras e 1 atividade por vez por equipe
   const livre = {}, visit = new Set();
   const fimDe = id => {
     const r = map[id];
     if (r.fim != null) return r.fim;
-    if (visit.has(id)) return 0; // evita ciclo
+    if (visit.has(id)) return 0;
     visit.add(id);
     if (r.filhos.length) return r.fim = Math.max(0, ...r.filhos.map(f => fimDe(f.id)));
-    const resto = r.prazo * (1 - Math.min(r.pct, 100) / 100);
+    const resto = restante(r, H);
     const inicioPred = Math.max(0, ...predsEf(r).map(fimDe));
     if (resto <= 0) return r.fim = 0;
-    const eq = r.equipe || '—';
-    r.fim = Math.max(inicioPred, livre[eq] || 0) + resto;
-    livre[eq] = r.fim;
+    const ip = toD(r.iniPlan);
+    const base = !r.iniReal && ip ? Math.max(0, diff(H, ip)) : 0; // ainda não chegou o início planejado
+    const eqs = listaEq(r.equipe);
+    r.fim = Math.max(base, inicioPred, ...eqs.map(e => livre[e] || 0)) + resto;
+    eqs.forEach(e => livre[e] = r.fim);
     return r.fim;
   };
   const folhas = p.rows.filter(r => !r.filhos.length);
   folhas.forEach(f => fimDe(f.id));
 
-  const raiz = p.rows.filter(r => !paiId(r.id) || !map[paiId(r.id)]);
+  const raiz = p.rows.filter(r => !map[paiId(r.id)]);
   const tot = raiz.reduce((s, r) => s + r.prazoC, 0);
   p.pct = tot ? raiz.reduce((s, r) => s + r.prazoC * r.pctC, 0) / tot : 0;
   p.dias = Math.ceil(Math.max(0, ...folhas.map(f => f.fim)));
   p.equipes = {};
-  folhas.forEach(f => { const e = f.equipe || '—'; p.equipes[e] = Math.max(p.equipes[e] || 0, f.fim); });
+  folhas.forEach(f => listaEq(f.equipe).forEach(e => p.equipes[e] = Math.max(p.equipes[e] || 0, f.fim)));
+  p.nAlertas = folhas.filter(f => f.alertas.length).length;
   p.map = map;
 }
 
@@ -104,28 +157,34 @@ function calcular(p) {
 async function carregar() {
   $('#loading').classList.remove('hidden');
   try {
-    const res = await fetch(`${API_URL}?action=all`);
-    projetos = await res.json();
+    projetos = await (await fetch(`${API_URL}?action=all`)).json();
     projetos.forEach(calcular);
     rota();
   } catch (e) { console.error(e); toast('Erro ao carregar dados'); }
   $('#loading').classList.add('hidden');
 }
 
-async function salvar(project, id, field, value) {
+async function salvar(project, updates) {
   try {
     const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ project, id, field, value })
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ project, updates })
     });
-    const r = await res.json();
-    toast(r.ok ? 'Salvo ✔' : 'Falha ao salvar');
+    toast((await res.json()).ok ? 'Salvo ✔' : 'Falha ao salvar');
   } catch (e) { console.error(e); toast('Sem conexão – não salvo'); }
 }
 
 // ---------- TELAS ----------
-const barra = pct => `<div class="bar"><i style="width:${Math.min(pct,100)}%"></i></div>`;
+const barra = pct => `<div class="bar"><i style="width:${Math.min(pct, 100)}%"></i></div>`;
+const tags = r => {
+  if (!r.alertas.length) return r.pctC >= 100 ? '<span class="tag t-ok">Concluído</span>' : '';
+  if (r.filhos.length) {
+    const c = {}; r.alertas.forEach(a => c[a.t] = (c[a.t] || 0) + 1);
+    const nome = { ini: 'Início', atr: 'Atraso', proj: 'Projeção', est: 'Estouro' };
+    return Object.entries(c).map(([t, n]) => `<span class="tag t-${t}">${nome[t]}: ${n}</span>`).join('');
+  }
+  return r.alertas.map(a => `<span class="tag t-${a.t}">${a.x}</span>`).join('');
+};
 
 function home() {
   $('#titulo').textContent = 'Projetos';
@@ -134,6 +193,7 @@ function home() {
     <div class="card" onclick="location.hash='p=${i}'">
       <h3>${esc(p.nome)}</h3>${barra(p.pct)}
       <div class="meta"><span>${fmt(p.pct)}%</span><span>${p.dias} dia(s) restantes</span></div>
+      <div class="meta"><span>${p.nAlertas ? `⚠ ${p.nAlertas} atividade(s) com alerta` : '✔ Sem alertas'}</span></div>
     </div>`).join('')}</div>`;
 }
 
@@ -145,45 +205,61 @@ function projeto(i) {
   if (!p) return home();
   $('#titulo').textContent = p.nome;
   $('#btnHome').classList.remove('hidden');
+  const f = filtroEq[i] || '';
   const eqs = Object.entries(p.equipes).map(([e, d]) => `${esc(e)}: <b>${Math.ceil(d)}d</b>`).join(' · ');
+  const opts = Object.keys(p.equipes).sort().map(e => `<option ${e === f ? 'selected' : ''}>${esc(e)}</option>`).join('');
+  const rows = p.rows.filter(r => !oculto(p, r) && (!f || r.eqSet.has(f)));
   $('#app').innerHTML = `
     <div class="tabs">${projetos.map((q, j) => `<button class="${j == i ? 'on' : ''}" onclick="location.hash='p=${j}'">${esc(q.nome)}</button>`).join('')}</div>
     <div class="resumo">
       <span>Executado: <b>${fmt(p.pct)}%</b></span>
       <span>Restante: <b>${p.dias} dia(s)</b></span>
       <span>Por equipe: ${eqs || '—'}</span>
+      <span>Filtrar equipe: <select onchange="filtroEq[${i}]=this.value;projeto(${i})"><option value="">Todas</option>${opts}</select></span>
       <span><a href="#" onclick="todos(${i},true);return false">Ocultar sub-itens</a> · <a href="#" onclick="todos(${i},false);return false">Exibir todos</a></span>
     </div>
     <div class="tbl"><table>
-      <thead><tr><th></th><th>ID</th><th>Descrição da atividade</th><th>Predecessora</th><th>Prazo (d)</th><th>Equipe</th><th>% Executada</th></tr></thead>
-      <tbody>${p.rows.filter(r => !oculto(p, r)).map(r => linha(p, i, r)).join('')}</tbody>
+      <thead><tr><th></th><th>ID</th><th>Descrição</th><th>Equipe</th><th>Pred.</th><th>Prazo (d)</th><th>% Exec.</th>
+      <th>Início plan.</th><th>Início real</th><th>Fim real</th><th>Status</th></tr></thead>
+      <tbody>${rows.map(r => linha(p, i, r)).join('')}</tbody>
     </table></div>`;
 }
 
 function linha(p, i, r) {
-  const pai = r.filhos.length > 0;
+  const pai = r.filhos.length > 0, idq = esc(r.id).replace(/'/g, "\\'");
   const tg = pai ? (localStorage[colKey(p, r.id)] ? '▸' : '▾') : '';
   const ind = (r.id.split('.').length - 1) * 16;
-  const prazo = pai ? fmt(r.prazoC)
-    : `<input type="number" min="0" step="0.5" value="${r.prazo}" onchange="editar(${i},'${r.id}','prazo',this.value)">`;
-  const pct = pai ? `${fmt(r.pctC)}%`
-    : `<input type="number" min="0" max="100" value="${r.pct}" ${r.bloq ? 'disabled title="Aguardando predecessora"' : ''} onchange="editar(${i},'${r.id}','pct',this.value)">%`;
+  const dis = r.bloq ? 'disabled title="Aguardando predecessora"' : '';
+  const inp = (field, type, val, extra = '') =>
+    `<input type="${type}" value="${val}" ${extra} onchange="editar(${i},'${idq}','${field}',this.value)">`;
+  const equipe = pai ? '' : listaEq(r.equipe).map(e => `<span class="eq">${esc(e)}</span>`).join('');
   return `<tr class="${pai ? 'pai' : ''} ${r.bloq ? 'bloq' : ''}">
-    <td class="tg" onclick="toggle(${i},'${r.id}')">${tg}</td>
+    <td class="tg" onclick="toggle(${i},'${idq}')">${tg}</td>
     <td>${esc(r.id)}</td>
-    <td style="padding-left:${8 + ind}px">${r.bloq ? '🔒 ' : ''}${esc(r.descricao)}</td>
-    <td>${esc(r.pred)}</td><td>${prazo}</td><td>${esc(r.equipe)}</td>
-    <td>${pct}<span class="mini">${barra(r.pctC)}</span></td></tr>`;
+    <td class="desc" style="padding-left:${8 + ind}px">${r.bloq ? '🔒 ' : ''}${esc(r.descricao)}</td>
+    <td>${equipe}</td>
+    <td>${esc(r.pred)}</td>
+    <td>${pai ? fmt(r.prazoC) : inp('prazo', 'number', r.prazo, 'min="0" step="0.5"')}</td>
+    <td>${pai ? fmt(r.pctC) + '%' : inp('pct', 'number', r.pct, `min="0" max="100" ${dis}`) + '%'}<span class="mini">${barra(r.pctC)}</span></td>
+    <td>${pai ? br(r.iniPlanC) : inp('iniPlan', 'date', r.iniPlan)}</td>
+    <td>${pai ? br(r.iniRealC) : inp('iniReal', 'date', r.iniReal, dis)}</td>
+    <td>${pai ? br(r.fimRealC) : inp('fimReal', 'date', r.fimReal, dis)}</td>
+    <td>${tags(r)}</td></tr>`;
 }
 
 function editar(i, id, field, v) {
-  const p = projetos[i], r = p.map[id];
-  v = Math.max(0, Number(v) || 0);
+  const p = projetos[i], r = p.map[id], up = [], h = iso(hoje());
+  const set = (f, val) => { r[f] = val; up.push({ id, field: f, value: val }); };
+  if (field === 'prazo' || field === 'pct') v = Math.max(0, Number(v) || 0);
   if (field === 'pct') v = Math.min(v, 100);
-  r[field] = v;
-  calcular(p);
-  projeto(i);
-  salvar(p.nome, id, field, v);
+  set(field, v);
+  if (field === 'pct') {
+    if (v > 0 && !r.iniReal) set('iniReal', h);       // preenche início real automaticamente
+    if (v >= 100 && !r.fimReal) set('fimReal', h);    // preenche fim real ao concluir
+    if (v < 100 && r.fimReal) set('fimReal', '');
+  }
+  if (field === 'fimReal' && v && r.pct < 100) set('pct', 100);
+  calcular(p); projeto(i); salvar(p.nome, up);
 }
 
 function toggle(i, id) {
@@ -199,7 +275,6 @@ function todos(i, ocultar) {
 }
 
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.add('hidden'), 2500); }
-
 function rota() { const m = location.hash.match(/p=(\d+)/); m ? projeto(+m[1]) : home(); }
 
 window.addEventListener('hashchange', rota);
