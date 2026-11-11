@@ -49,7 +49,9 @@ textarea.obs{width:100%;min-width:220px;resize:vertical;font-size:12px}textarea.
 .hb{display:flex;align-items:center;gap:6px;margin:3px 0}.hb span:first-child{width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hb .tr{flex:1;height:9px;background:#e3e8ef;border-radius:4px;position:relative;overflow:hidden}
 .hb .tr i{position:absolute;left:0;top:0;height:100%}
-#print table{font-size:11px}#print td,#print th{white-space:normal;padding:4px}
+.av2{position:relative;height:10px;background:#e3e8ef;border-radius:5px;overflow:hidden;min-width:120px}
+.av2 i{position:absolute;left:0;top:0;height:100%}.av2 .pl{background:#c7d0da}.av2 .ex{background:#2e9d5b}
+#print table{font-size:11px}#print td,#print th{white-space:normal;padding:4px;vertical-align:middle}
 #print ul{margin:4px 0;padding-left:18px}
 @media print{
   @page{size:A4;margin:12mm}
@@ -377,14 +379,16 @@ function exportarPDF(i) {
         ${hb('Início atrasado', al.ini, f.length, '#d4a017', al.ini)}
         ${hb('Estouro de prazo', al.est, f.length, '#8e44ad', al.est)}</div>
     </div>
-    <div class="g2">
-      <div><h4>Avanço por etapa (verde = executado · cinza = planejado)</h4>
-        ${p.raiz.map(r => hb(r.id + ' ' + r.descricao, r.planC, 100, '#c7d0da', fmt(r.planC) + '%')
-          .replace('<i ', `<i style="width:${Math.min(100, r.pctC)}%;background:#2e9d5b;z-index:1"></i><i `)
-          .replace(`>${fmt(r.planC)}%<`, `>${fmt(r.pctC)}%<`)).join('')}</div>
-      <div><h4>Dias restantes por equipe</h4>
-        ${Object.entries(p.equipes).sort((a, b) => b[1] - a[1]).map(([e, d]) => hb(e, d, maxEq, '#1e3a5f', Math.ceil(d) + 'd')).join('')}</div>
-    </div>
+    <h4>Avanço por etapa (verde = executado · cinza = planejado)</h4>
+    <table><thead><tr><th>ID</th><th>Etapa</th><th>Prazo</th><th>Início plan.</th><th>Início real</th><th>Fim real</th>
+      <th>Avanço</th><th>Exec.</th><th>Plan.</th><th>Status</th></tr></thead>
+    <tbody>${p.raiz.map(r => `<tr>
+      <td>${esc(r.id)}</td><td>${esc(r.descricao)}</td><td>${fmt(r.prazoC)}d</td>
+      <td>${br(r.iniPlanC)}</td><td>${br(r.iniRealC)}</td><td>${br(r.fimRealC)}</td>
+      <td><div class="av2"><i class="pl" style="width:${Math.min(100, r.planC)}%"></i><i class="ex" style="width:${Math.min(100, r.pctC)}%"></i></div></td>
+      <td><b>${fmt(r.pctC)}%</b></td><td>${fmt(r.planC)}%</td><td>${tags(r)}</td></tr>`).join('')}</tbody></table>
+    <h4>Dias restantes por equipe</h4>
+    ${Object.entries(p.equipes).sort((a, b) => b[1] - a[1]).map(([e, d]) => hb(e, d, maxEq, '#1e3a5f', Math.ceil(d) + 'd')).join('')}
     <h4>Diagnóstico e recomendações</h4><ul>${rec.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
     ${crit.length ? `<h4>Atividades críticas</h4><table><thead><tr><th>ID</th><th>Atividade</th><th>Equipe</th><th>%</th><th>Alertas</th><th>Observação</th></tr></thead>
       <tbody>${crit.map(r => `<tr><td>${esc(r.id)}</td><td>${esc(r.descricao)}</td><td>${esc(r.equipe)}</td><td>${fmt(r.pct)}%</td>
