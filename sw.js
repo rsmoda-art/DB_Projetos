@@ -1,4 +1,4 @@
-const CACHE = 'proj-v2';
+const CACHE = 'proj-v3';
 const ARQS = ['./', 'index.html', 'manifest.json'];
 
 self.addEventListener('install', e => {
