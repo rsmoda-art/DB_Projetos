@@ -10,7 +10,7 @@
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:#f1f4f8;color:#1c2733}
 header{background:#1e3a5f;color:#fff;padding:12px 16px;display:flex;gap:12px;align-items:center}
 header h1{font-size:18px;margin:0;flex:1}header button{background:none;border:1px solid #fff6;color:#fff;border-radius:6px;padding:6px 10px;cursor:pointer}
-main{padding:16px;max-width:1400px;margin:auto}
+main{padding:16px;max-width:1500px;margin:auto}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px #0002;cursor:pointer}
 .card h3{margin:0 0 10px;font-size:15px}
@@ -22,19 +22,41 @@ main{padding:16px;max-width:1400px;margin:auto}
 .resumo{background:#fff;border-radius:10px;padding:12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:16px;font-size:14px;align-items:center}
 .tbl{overflow-x:auto;background:#fff;border-radius:10px}
 table{border-collapse:collapse;width:100%;font-size:13px}
-th,td{padding:7px 8px;border-bottom:1px solid #e6ebf1;text-align:left;white-space:nowrap}th{background:#e9eef4;position:sticky;top:0}
+th,td{padding:7px 8px;border-bottom:1px solid #e6ebf1;text-align:left;white-space:nowrap;vertical-align:top}th{background:#e9eef4;position:sticky;top:0}
 td.desc{white-space:normal;min-width:280px;max-width:420px}
 td.eqc{white-space:normal;width:110px;max-width:110px;line-height:1.6}
+td.obsc{min-width:220px}
 tr.pai{background:#f5f8fc;font-weight:600}tr.bloq{color:#9aa5b1}
 td.tg{cursor:pointer;width:24px;user-select:none}
-input,select{padding:4px;border:1px solid #c7d0da;border-radius:4px}input{width:64px}input[type=date]{width:130px}input:disabled{background:#eee}
+input,select,textarea{padding:4px;border:1px solid #c7d0da;border-radius:4px;font:inherit}input{width:64px}input[type=date]{width:130px}input:disabled{background:#eee}
+textarea.obs{width:100%;min-width:220px;resize:vertical;font-size:12px}textarea.and{border-color:#d4a017;background:#fffbea}
 .mini{width:70px;display:inline-block;vertical-align:middle;margin-left:6px}
 .eq{display:inline-block;background:#e1ecf8;color:#1e3a5f;border-radius:10px;padding:1px 8px;margin:1px;font-size:12px}
 .tag{display:inline-block;border-radius:4px;padding:2px 6px;margin:1px;font-size:11px;color:#fff;font-weight:600}
 .t-ini{background:#d4a017}.t-atr{background:#c0392b}.t-proj{background:#e67e22}.t-est{background:#8e44ad}.t-ok{background:#2e9d5b}
+.btn{background:#1e3a5f;color:#fff;border:0;border-radius:6px;padding:7px 12px;cursor:pointer}
 #loading{position:fixed;inset:0;background:#fff9;display:flex;align-items:center;justify-content:center;font-size:18px}
 .hidden{display:none!important}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 16px;border-radius:6px}
+/* ---------- DASHBOARD PDF ---------- */
+#print{display:none;font-size:12px;color:#1c2733}
+#print h2{margin:0;font-size:20px}#print h4{margin:14px 0 6px;font-size:13px;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:3px}
+.dh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.saude{color:#fff;padding:8px 14px;border-radius:8px;font-weight:700;font-size:15px;text-align:center}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.kpi{border:1px solid #d5dde7;border-radius:8px;padding:8px;text-align:center}.kpi b{display:block;font-size:17px;margin-top:2px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.hb{display:flex;align-items:center;gap:6px;margin:3px 0}.hb span:first-child{width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hb .tr{flex:1;height:9px;background:#e3e8ef;border-radius:4px;position:relative;overflow:hidden}
+.hb .tr i{position:absolute;left:0;top:0;height:100%}
+#print table{font-size:11px}#print td,#print th{white-space:normal;padding:4px}
+#print ul{margin:4px 0;padding-left:18px}
+@media print{
+  @page{size:A4;margin:12mm}
+  body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body>*:not(#print){display:none!important}#print{display:block!important}
+  tr,.kpi,.hb{break-inside:avoid}
+}
 </style>
 </head>
 <body>
@@ -42,6 +64,7 @@ input,select{padding:4px;border:1px solid #c7d0da;border-radius:4px}input{width:
 <main id="app"></main>
 <div id="loading">Carregando…</div>
 <div id="toast" class="hidden"></div>
+<div id="print"></div>
 
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbyaQ1ZEtGFO_XgI1wprpnnQ6PLObn1irw40CaCAnYUu4Q66V4-4iWxC4bUQjyVRIpiW/exec';
@@ -85,18 +108,24 @@ function alertas(r, H) {
 
 function restante(r, H) {
   if (r.pct >= 100 || r.fimReal) return 0;
-  const plano = r.prazo * (1 - r.pct / 100);
   if (r.iniReal && r.pct > 0) {
     const dec = diff(toD(r.iniReal), H);
-    if (dec > 0) return dec * (100 - r.pct) / r.pct; // projeção pelo ritmo real
+    if (dec > 0) return dec * (100 - r.pct) / r.pct; // ritmo real
   }
-  return plano;
+  return r.prazo * (1 - r.pct / 100);
+}
+
+// % que deveria estar executado hoje pelo planejamento
+function planejado(r, H) {
+  const ip = toD(r.iniPlan);
+  if (!ip || !r.prazo) return 0;
+  return Math.max(0, Math.min(1, diff(ip, H) / r.prazo)) * 100;
 }
 
 // ---------- CÁLCULO ----------
 function calcular(p) {
   const map = {}, H = hoje();
-  p.rows.forEach(r => { r.filhos = []; r.fim = null; map[r.id] = r; });
+  p.rows.forEach(r => { r.filhos = []; r.fim = null; r.obs = r.obs || ''; map[r.id] = r; });
   p.rows.forEach(r => map[paiId(r.id)]?.filhos.push(r));
 
   [...p.rows].sort((a, b) => b.id.split('.').length - a.id.split('.').length).forEach(r => {
@@ -105,13 +134,14 @@ function calcular(p) {
       const t = f.reduce((s, x) => s + x.prazoC, 0);
       r.prazoC = t;
       r.pctC = t ? f.reduce((s, x) => s + x.prazoC * x.pctC, 0) / t : 0;
+      r.planC = t ? f.reduce((s, x) => s + x.prazoC * x.planC, 0) / t : 0;
       r.iniPlanC = minD(f.map(x => x.iniPlanC));
       r.iniRealC = minD(f.map(x => x.iniRealC));
       r.fimRealC = f.every(x => x.fimRealC) ? maxD(f.map(x => x.fimRealC)) : '';
       r.alertas = f.flatMap(x => x.alertas);
       r.eqSet = new Set(f.flatMap(x => [...x.eqSet]));
     } else {
-      Object.assign(r, { prazoC: r.prazo, pctC: r.pct, iniPlanC: r.iniPlan, iniRealC: r.iniReal, fimRealC: r.fimReal });
+      Object.assign(r, { prazoC: r.prazo, pctC: r.pct, planC: planejado(r, H), iniPlanC: r.iniPlan, iniRealC: r.iniReal, fimRealC: r.fimReal });
       r.alertas = alertas(r, H);
       r.eqSet = new Set(listaEq(r.equipe));
     }
@@ -135,7 +165,7 @@ function calcular(p) {
     const inicioPred = Math.max(0, ...predsEf(r).map(fimDe));
     if (resto <= 0) return r.fim = 0;
     const ip = toD(r.iniPlan);
-    const base = !r.iniReal && ip ? Math.max(0, diff(H, ip)) : 0; // ainda não chegou o início planejado
+    const base = !r.iniReal && ip ? Math.max(0, diff(H, ip)) : 0;
     const eqs = listaEq(r.equipe);
     r.fim = Math.max(base, inicioPred, ...eqs.map(e => livre[e] || 0)) + resto;
     eqs.forEach(e => livre[e] = r.fim);
@@ -147,11 +177,12 @@ function calcular(p) {
   const raiz = p.rows.filter(r => !map[paiId(r.id)]);
   const tot = raiz.reduce((s, r) => s + r.prazoC, 0);
   p.pct = tot ? raiz.reduce((s, r) => s + r.prazoC * r.pctC, 0) / tot : 0;
+  p.plan = tot ? raiz.reduce((s, r) => s + r.prazoC * r.planC, 0) / tot : 0;
   p.dias = Math.ceil(Math.max(0, ...folhas.map(f => f.fim)));
   p.equipes = {};
   folhas.forEach(f => listaEq(f.equipe).forEach(e => p.equipes[e] = Math.max(p.equipes[e] || 0, f.fim)));
   p.nAlertas = folhas.filter(f => f.alertas.length).length;
-  p.map = map;
+  p.raiz = raiz; p.folhas = folhas; p.map = map;
 }
 
 // ---------- API ----------
@@ -214,14 +245,16 @@ function projeto(i) {
     <div class="tabs">${projetos.map((q, j) => `<button class="${j == i ? 'on' : ''}" onclick="location.hash='p=${j}'">${esc(q.nome)}</button>`).join('')}</div>
     <div class="resumo">
       <span>Executado: <b>${fmt(p.pct)}%</b></span>
+      <span>Planejado: <b>${fmt(p.plan)}%</b></span>
       <span>Restante: <b>${p.dias} dia(s)</b></span>
       <span>Por equipe: ${eqs || '—'}</span>
       <span>Filtrar equipe: <select onchange="filtroEq[${i}]=this.value;projeto(${i})"><option value="">Todas</option>${opts}</select></span>
       <span><a href="#" onclick="todos(${i},true);return false">Ocultar sub-itens</a> · <a href="#" onclick="todos(${i},false);return false">Exibir todos</a></span>
+      <span><button class="btn" onclick="exportarPDF(${i})">📄 Exportar PDF</button></span>
     </div>
     <div class="tbl"><table>
       <thead><tr><th></th><th>ID</th><th>Descrição</th><th>Equipe</th><th>Pred.</th><th>Prazo (d)</th><th>% Exec.</th>
-      <th>Início plan.</th><th>Início real</th><th>Fim real</th><th>Status</th></tr></thead>
+      <th>Início plan.</th><th>Início real</th><th>Fim real</th><th>Status</th><th>Observação</th></tr></thead>
       <tbody>${rows.map(r => linha(p, i, r)).join('')}</tbody>
     </table></div>`;
 }
@@ -232,8 +265,11 @@ function linha(p, i, r) {
   const ind = (r.id.split('.').length - 1) * 16;
   const dis = r.bloq ? 'disabled title="Aguardando predecessora"' : '';
   const inp = (field, type, val, extra = '') =>
-    `<input type="${type}" value="${val}" ${extra} onchange="editar(${i},'${idq}','${field}',this.value)">`;
+    `<input type="${type}" value="${esc(val)}" ${extra} onchange="editar(${i},'${idq}','${field}',this.value)">`;
   const equipe = pai ? '' : listaEq(r.equipe).map(e => `<span class="eq">${esc(e)}</span>`).join('');
+  const andamento = r.pct > 0 && r.pct < 100;
+  const obs = pai ? '' : `<textarea class="obs ${andamento ? 'and' : ''}" rows="1" placeholder="${andamento ? 'Status da etapa…' : ''}"
+    onchange="editar(${i},'${idq}','obs',this.value)">${esc(r.obs)}</textarea>`;
   return `<tr class="${pai ? 'pai' : ''} ${r.bloq ? 'bloq' : ''}">
     <td class="tg" onclick="toggle(${i},'${idq}')">${tg}</td>
     <td>${esc(r.id)}</td>
@@ -245,7 +281,8 @@ function linha(p, i, r) {
     <td>${pai ? br(r.iniPlanC) : inp('iniPlan', 'date', r.iniPlan)}</td>
     <td>${pai ? br(r.iniRealC) : inp('iniReal', 'date', r.iniReal, dis)}</td>
     <td>${pai ? br(r.fimRealC) : inp('fimReal', 'date', r.fimReal, dis)}</td>
-    <td>${tags(r)}</td></tr>`;
+    <td>${tags(r)}</td>
+    <td class="obsc">${obs}</td></tr>`;
 }
 
 function editar(i, id, field, v) {
@@ -255,12 +292,13 @@ function editar(i, id, field, v) {
   if (field === 'pct') v = Math.min(v, 100);
   set(field, v);
   if (field === 'pct') {
-    if (v > 0 && !r.iniReal) set('iniReal', h);       // preenche início real automaticamente
-    if (v >= 100 && !r.fimReal) set('fimReal', h);    // preenche fim real ao concluir
+    if (v > 0 && !r.iniReal) set('iniReal', h);
+    if (v >= 100 && !r.fimReal) set('fimReal', h);
     if (v < 100 && r.fimReal) set('fimReal', '');
   }
   if (field === 'fimReal' && v && r.pct < 100) set('pct', 100);
-  calcular(p); projeto(i); salvar(p.nome, up);
+  if (field !== 'obs') { calcular(p); projeto(i); } // obs não muda cálculo nem perde o foco
+  salvar(p.nome, up);
 }
 
 function toggle(i, id) {
@@ -273,6 +311,91 @@ function todos(i, ocultar) {
   const p = projetos[i];
   p.rows.filter(r => r.filhos.length).forEach(r => ocultar ? localStorage.setItem(colKey(p, r.id), 1) : localStorage.removeItem(colKey(p, r.id)));
   projeto(i);
+}
+
+// ---------- DASHBOARD / PDF ----------
+const hb = (lbl, val, max, cor, txt) =>
+  `<div class="hb"><span title="${esc(lbl)}">${esc(lbl)}</span><span class="tr"><i style="width:${max ? Math.min(100, val / max * 100) : 0}%;background:${cor}"></i></span><span style="width:52px;text-align:right">${txt}</span></div>`;
+
+function exportarPDF(i) {
+  const p = projetos[i], H = hoje(), f = p.folhas;
+  const st = { c: 0, a: 0, n: 0, b: 0 };
+  f.forEach(r => r.pct >= 100 ? st.c++ : r.pct > 0 ? st.a++ : r.bloq ? st.b++ : st.n++);
+  const al = { ini: 0, atr: 0, proj: 0, est: 0 };
+  f.forEach(r => r.alertas.forEach(a => al[a.t]++));
+  const spi = p.plan > 0 ? p.pct / p.plan : 1;
+  const desvio = p.pct - p.plan;
+  const fimPrev = new Date(H.getTime() + p.dias * 864e5);
+  const fimPlan = maxD(f.map(r => r.iniPlan && iso(new Date(toD(r.iniPlan).getTime() + r.prazo * 864e5))));
+  const atrasoFinal = fimPlan ? diff(toD(fimPlan), fimPrev) : null;
+
+  // saúde
+  let saude = ['SAUDÁVEL', '#2e9d5b'];
+  if (spi < 0.85 || al.atr > 2 || atrasoFinal > 15) saude = ['CRÍTICO', '#c0392b'];
+  else if (spi < 0.95 || al.atr || al.proj || al.ini || atrasoFinal > 0) saude = ['ATENÇÃO', '#d4a017'];
+
+  // recomendações automáticas
+  const rec = [];
+  if (spi < 0.95) rec.push(`Ritmo abaixo do planejado (SPI ${spi.toFixed(2)}): ${fmt(Math.abs(desvio))} p.p. atrás do previsto para hoje.`);
+  if (al.atr) rec.push(`${al.atr} atividade(s) já passaram do prazo: priorizar recursos e revisar as datas das sucessoras.`);
+  if (al.proj) rec.push(`${al.proj} atividade(s) com tendência de atraso pelo ritmo atual: avaliar reforço de equipe.`);
+  if (al.ini) rec.push(`${al.ini} atividade(s) com início atrasado ou ainda não iniciadas após a data planejada.`);
+  if (st.b) rec.push(`${st.b} atividade(s) travadas aguardando predecessoras.`);
+  const eqMax = Object.entries(p.equipes).sort((a, b) => b[1] - a[1])[0];
+  if (eqMax && eqMax[1] >= p.dias && p.dias > 0) rec.push(`Equipe "${eqMax[0]}" define o término do projeto (gargalo, ${Math.ceil(eqMax[1])}d).`);
+  if (atrasoFinal > 0) rec.push(`Término previsto ${atrasoFinal} dia(s) após o planejado (${br(fimPlan)}).`);
+  if (!rec.length) rec.push('Projeto dentro do planejado. Manter o acompanhamento.');
+
+  const peso = { atr: 4, proj: 3, ini: 2, est: 1 };
+  const crit = f.filter(r => r.alertas.length && r.pct < 100)
+    .sort((a, b) => Math.max(...b.alertas.map(x => peso[x.t])) - Math.max(...a.alertas.map(x => peso[x.t])))
+    .slice(0, 15);
+  const notas = f.filter(r => r.obs && r.pct < 100);
+  const maxEq = Math.max(1, ...Object.values(p.equipes));
+  const k = (t, v, c = '') => `<div class="kpi">${t}<b style="color:${c}">${v}</b></div>`;
+
+  $('#print').innerHTML = `
+    <div class="dh"><div><h2>${esc(p.nome)}</h2>Relatório de acompanhamento · emitido em ${H.toLocaleDateString('pt-BR')}</div>
+      <div class="saude" style="background:${saude[1]}">${saude[0]}<br><small>Saúde do projeto</small></div></div>
+    <div class="kpis">
+      ${k('Executado', fmt(p.pct) + '%')}
+      ${k('Planejado hoje', fmt(p.plan) + '%')}
+      ${k('Desvio', (desvio >= 0 ? '+' : '') + fmt(desvio) + ' p.p.', desvio < 0 ? '#c0392b' : '#2e9d5b')}
+      ${k('SPI', spi.toFixed(2), spi < 0.95 ? '#c0392b' : '#2e9d5b')}
+      ${k('Dias restantes', p.dias)}
+      ${k('Término previsto', fimPrev.toLocaleDateString('pt-BR'), atrasoFinal > 0 ? '#c0392b' : '')}
+    </div>
+    <div class="g2">
+      <div><h4>Status das atividades (${f.length})</h4>
+        ${hb('Concluídas', st.c, f.length, '#2e9d5b', st.c)}
+        ${hb('Em andamento', st.a, f.length, '#2f7ed8', st.a)}
+        ${hb('Não iniciadas', st.n, f.length, '#9aa5b1', st.n)}
+        ${hb('Bloqueadas', st.b, f.length, '#555', st.b)}</div>
+      <div><h4>Alertas</h4>
+        ${hb('Em atraso', al.atr, f.length, '#c0392b', al.atr)}
+        ${hb('Projeção de atraso', al.proj, f.length, '#e67e22', al.proj)}
+        ${hb('Início atrasado', al.ini, f.length, '#d4a017', al.ini)}
+        ${hb('Estouro de prazo', al.est, f.length, '#8e44ad', al.est)}</div>
+    </div>
+    <div class="g2">
+      <div><h4>Avanço por etapa (verde = executado · cinza = planejado)</h4>
+        ${p.raiz.map(r => hb(r.id + ' ' + r.descricao, r.planC, 100, '#c7d0da', fmt(r.planC) + '%')
+          .replace('<i ', `<i style="width:${Math.min(100, r.pctC)}%;background:#2e9d5b;z-index:1"></i><i `)
+          .replace(`>${fmt(r.planC)}%<`, `>${fmt(r.pctC)}%<`)).join('')}</div>
+      <div><h4>Dias restantes por equipe</h4>
+        ${Object.entries(p.equipes).sort((a, b) => b[1] - a[1]).map(([e, d]) => hb(e, d, maxEq, '#1e3a5f', Math.ceil(d) + 'd')).join('')}</div>
+    </div>
+    <h4>Diagnóstico e recomendações</h4><ul>${rec.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+    ${crit.length ? `<h4>Atividades críticas</h4><table><thead><tr><th>ID</th><th>Atividade</th><th>Equipe</th><th>%</th><th>Alertas</th><th>Observação</th></tr></thead>
+      <tbody>${crit.map(r => `<tr><td>${esc(r.id)}</td><td>${esc(r.descricao)}</td><td>${esc(r.equipe)}</td><td>${fmt(r.pct)}%</td>
+      <td>${r.alertas.map(a => `<span class="tag t-${a.t}">${a.x}</span>`).join('')}</td><td>${esc(r.obs)}</td></tr>`).join('')}</tbody></table>` : ''}
+    ${notas.length ? `<h4>Status das etapas em andamento</h4><table><thead><tr><th>ID</th><th>Atividade</th><th>%</th><th>Observação</th></tr></thead>
+      <tbody>${notas.map(r => `<tr><td>${esc(r.id)}</td><td>${esc(r.descricao)}</td><td>${fmt(r.pct)}%</td><td>${esc(r.obs)}</td></tr>`).join('')}</tbody></table>` : ''}`;
+
+  const t = document.title;
+  document.title = `Dashboard - ${p.nome} - ${iso(H)}`; // nome sugerido do arquivo
+  window.print();
+  document.title = t;
 }
 
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.add('hidden'), 2500); }
