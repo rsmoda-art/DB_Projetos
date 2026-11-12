@@ -50,7 +50,7 @@ textarea.obs{width:100%;min-width:220px;resize:vertical;font-size:12px}textarea.
 .hb .tr{flex:1;height:9px;background:#e3e8ef;border-radius:4px;position:relative;overflow:hidden}
 .hb .tr i{position:absolute;left:0;top:0;height:100%}
 .av2{position:relative;height:10px;background:#e3e8ef;border-radius:5px;overflow:hidden;min-width:120px}
-.av2 i{position:absolute;left:0;top:0;height:100%}.av2 .pl{background:#c7d0da}.av2 .ex{background:#2e9d5b}
+.av2 i{position:absolute;left:0;top:0;height:100%}.av2 .pl{background:#c7d0da}.av2 .ex{background:#2e9d5b}.av2 .eqb{background:#1e3a5f}
 #print table{font-size:11px}#print td,#print th{white-space:normal;padding:4px;vertical-align:middle}
 #print ul{margin:4px 0;padding-left:18px}
 @media print{
@@ -71,14 +71,21 @@ textarea.obs{width:100%;min-width:220px;resize:vertical;font-size:12px}textarea.
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbyaQ1ZEtGFO_XgI1wprpnnQ6PLObn1irw40CaCAnYUu4Q66V4-4iWxC4bUQjyVRIpiW/exec';
 const LIMIAR = 1; // % mínimo da predecessora para liberar a sucessora
+const SEM_EQ = '—';
 
 let projetos = [], filtroEq = {};
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const paiId = id => id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : null;
 const lista = s => s ? s.split(/[;,\s]+/).filter(Boolean) : [];
-const listaEq = s => { const l = String(s || '').split(';').map(x => x.trim()).filter(Boolean); return l.length ? l : ['—']; };
+const listaEq = s => { const l = String(s || '').split(';').map(x => x.trim()).filter(Boolean); return l.length ? l : [SEM_EQ]; };
+const eqReais = s => listaEq(s).filter(e => e !== SEM_EQ);
 const fmt = n => (Math.round(n * 10) / 10).toLocaleString('pt-BR');
+const ordId = (a, b) => {
+  const x = a.id.split('.').map(Number), y = b.id.split('.').map(Number);
+  for (let k = 0; k < Math.max(x.length, y.length); k++) { const d = (x[k] ?? -1) - (y[k] ?? -1); if (d) return d; }
+  return 0;
+};
 
 // ---------- DATAS ----------
 const hoje = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
@@ -88,6 +95,7 @@ const diff = (a, b) => Math.round((b - a) / 864e5);
 const br = s => s ? s.split('-').reverse().join('/') : '';
 const minD = a => a.filter(Boolean).sort()[0] || '';
 const maxD = a => a.filter(Boolean).sort().pop() || '';
+const dataEm = n => new Date(hoje().getTime() + Math.ceil(n) * 864e5).toLocaleDateString('pt-BR');
 
 // ---------- ALERTAS ----------
 function alertas(r, H) {
@@ -108,6 +116,7 @@ function alertas(r, H) {
   return s;
 }
 
+// dias de TRABALHO que faltam na atividade
 function restante(r, H) {
   if (r.pct >= 100 || r.fimReal) return 0;
   if (r.iniReal && r.pct > 0) {
@@ -156,11 +165,13 @@ function calcular(p) {
   };
   p.rows.forEach(r => r.bloq = predsEf(r).some(id => map[id].pctC < LIMIAR));
 
+  // Agenda: cada equipe executa uma atividade por vez, na ordem da data planejada.
+  // Início = maior entre (data planejada, fim das predecessoras, equipe livre).
   const livre = {}, visit = new Set();
   const fimDe = id => {
     const r = map[id];
     if (r.fim != null) return r.fim;
-    if (visit.has(id)) return 0;
+    if (visit.has(id)) return 0; // proteção contra ciclo
     visit.add(id);
     if (r.filhos.length) return r.fim = Math.max(0, ...r.filhos.map(f => fimDe(f.id)));
     const resto = restante(r, H);
@@ -168,21 +179,34 @@ function calcular(p) {
     if (resto <= 0) return r.fim = 0;
     const ip = toD(r.iniPlan);
     const base = !r.iniReal && ip ? Math.max(0, diff(H, ip)) : 0;
-    const eqs = listaEq(r.equipe);
-    r.fim = Math.max(base, inicioPred, ...eqs.map(e => livre[e] || 0)) + resto;
+    const eqs = eqReais(r.equipe); // sem equipe não entra em fila
+    r.inicio = Math.max(base, inicioPred, ...eqs.map(e => livre[e] || 0));
+    r.fim = r.inicio + resto;
     eqs.forEach(e => livre[e] = r.fim);
     return r.fim;
   };
   const folhas = p.rows.filter(r => !r.filhos.length);
-  folhas.forEach(f => fimDe(f.id));
+  [...folhas]
+    .sort((a, b) => (a.iniReal || a.iniPlan || '9999').localeCompare(b.iniReal || b.iniPlan || '9999') || ordId(a, b))
+    .forEach(f => fimDe(f.id));
 
   const raiz = p.rows.filter(r => !map[paiId(r.id)]);
   const tot = raiz.reduce((s, r) => s + r.prazoC, 0);
   p.pct = tot ? raiz.reduce((s, r) => s + r.prazoC * r.pctC, 0) / tot : 0;
   p.plan = tot ? raiz.reduce((s, r) => s + r.prazoC * r.planC, 0) / tot : 0;
   p.dias = Math.ceil(Math.max(0, ...folhas.map(f => f.fim)));
-  p.equipes = {};
-  folhas.forEach(f => listaEq(f.equipe).forEach(e => p.equipes[e] = Math.max(p.equipes[e] || 0, f.fim)));
+
+  // por equipe: término (dias a partir de hoje) e trabalho restante (dias efetivos)
+  p.equipes = {}; p.trab = {};
+  folhas.forEach(f => {
+    if (!(f.fim > 0)) return;
+    const resto = restante(f, H);
+    eqReais(f.equipe).forEach(e => {
+      p.equipes[e] = Math.max(p.equipes[e] || 0, f.fim);
+      p.trab[e] = (p.trab[e] || 0) + resto;
+    });
+  });
+  p.todasEq = [...new Set(folhas.flatMap(f => eqReais(f.equipe)))].sort();
   p.nAlertas = folhas.filter(f => f.alertas.length).length;
   p.raiz = raiz; p.folhas = folhas; p.map = map;
 }
@@ -219,6 +243,7 @@ const tags = r => {
   }
   return r.alertas.map(a => `<span class="tag t-${a.t}">${a.x}</span>`).join('');
 };
+const eqOrd = p => Object.keys(p.equipes).sort((a, b) => p.equipes[b] - p.equipes[a] || a.localeCompare(b));
 
 function home() {
   $('#titulo').textContent = 'Projetos';
@@ -240,15 +265,15 @@ function projeto(i) {
   $('#titulo').textContent = p.nome;
   $('#btnHome').classList.remove('hidden');
   const f = filtroEq[i] || '';
-  const eqs = Object.entries(p.equipes).map(([e, d]) => `${esc(e)}: <b>${Math.ceil(d)}d</b>`).join(' · ');
-  const opts = Object.keys(p.equipes).sort().map(e => `<option ${e === f ? 'selected' : ''}>${esc(e)}</option>`).join('');
+  const eqs = eqOrd(p).map(e => `${esc(e)}: <b>${fmt(p.trab[e])}d</b> trab. → fim <b>${dataEm(p.equipes[e])}</b>`).join(' · ');
+  const opts = p.todasEq.map(e => `<option ${e === f ? 'selected' : ''}>${esc(e)}</option>`).join('');
   const rows = p.rows.filter(r => !oculto(p, r) && (!f || r.eqSet.has(f)));
   $('#app').innerHTML = `
     <div class="tabs">${projetos.map((q, j) => `<button class="${j == i ? 'on' : ''}" onclick="location.hash='p=${j}'">${esc(q.nome)}</button>`).join('')}</div>
     <div class="resumo">
       <span>Executado: <b>${fmt(p.pct)}%</b></span>
       <span>Planejado: <b>${fmt(p.plan)}%</b></span>
-      <span>Restante: <b>${p.dias} dia(s)</b></span>
+      <span>Restante: <b>${p.dias} dia(s)</b> (fim ${dataEm(p.dias)})</span>
       <span>Por equipe: ${eqs || '—'}</span>
       <span>Filtrar equipe: <select onchange="filtroEq[${i}]=this.value;projeto(${i})"><option value="">Todas</option>${opts}</select></span>
       <span><a href="#" onclick="todos(${i},true);return false">Ocultar sub-itens</a> · <a href="#" onclick="todos(${i},false);return false">Exibir todos</a></span>
@@ -343,8 +368,8 @@ function exportarPDF(i) {
   if (al.proj) rec.push(`${al.proj} atividade(s) com tendência de atraso pelo ritmo atual: avaliar reforço de equipe.`);
   if (al.ini) rec.push(`${al.ini} atividade(s) com início atrasado ou ainda não iniciadas após a data planejada.`);
   if (st.b) rec.push(`${st.b} atividade(s) travadas aguardando predecessoras.`);
-  const eqMax = Object.entries(p.equipes).sort((a, b) => b[1] - a[1])[0];
-  if (eqMax && eqMax[1] >= p.dias && p.dias > 0) rec.push(`Equipe "${eqMax[0]}" define o término do projeto (gargalo, ${Math.ceil(eqMax[1])}d).`);
+  const ord = eqOrd(p);
+  if (ord.length && p.equipes[ord[0]] >= p.dias && p.dias > 0) rec.push(`Equipe "${ord[0]}" define o término do projeto (gargalo: ${fmt(p.trab[ord[0]])}d de trabalho, fim em ${dataEm(p.equipes[ord[0]])}).`);
   if (atrasoFinal > 0) rec.push(`Término previsto ${atrasoFinal} dia(s) após o planejado (${br(fimPlan)}).`);
   if (!rec.length) rec.push('Projeto dentro do planejado. Manter o acompanhamento.');
 
@@ -387,8 +412,10 @@ function exportarPDF(i) {
       <td>${br(r.iniPlanC)}</td><td>${br(r.iniRealC)}</td><td>${br(r.fimRealC)}</td>
       <td><div class="av2"><i class="pl" style="width:${Math.min(100, r.planC)}%"></i><i class="ex" style="width:${Math.min(100, r.pctC)}%"></i></div></td>
       <td><b>${fmt(r.pctC)}%</b></td><td>${fmt(r.planC)}%</td><td>${tags(r)}</td></tr>`).join('')}</tbody></table>
-    <h4>Dias restantes por equipe</h4>
-    ${Object.entries(p.equipes).sort((a, b) => b[1] - a[1]).map(([e, d]) => hb(e, d, maxEq, '#1e3a5f', Math.ceil(d) + 'd')).join('')}
+    <h4>Equipes (trabalho restante e término previsto)</h4>
+    ${ord.length ? `<table><thead><tr><th>Equipe</th><th>Trabalho restante</th><th>Dias até o fim</th><th>Término previsto</th><th>Linha do tempo</th></tr></thead>
+    <tbody>${ord.map(e => `<tr><td>${esc(e)}</td><td>${fmt(p.trab[e])}d</td><td>${Math.ceil(p.equipes[e])}d</td><td>${dataEm(p.equipes[e])}</td>
+      <td><div class="av2"><i class="eqb" style="width:${Math.min(100, p.equipes[e] / maxEq * 100)}%"></i></div></td></tr>`).join('')}</tbody></table>` : '<p>Sem trabalho pendente.</p>'}
     <h4>Diagnóstico e recomendações</h4><ul>${rec.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
     ${crit.length ? `<h4>Atividades críticas</h4><table><thead><tr><th>ID</th><th>Atividade</th><th>Equipe</th><th>%</th><th>Alertas</th><th>Observação</th></tr></thead>
       <tbody>${crit.map(r => `<tr><td>${esc(r.id)}</td><td>${esc(r.descricao)}</td><td>${esc(r.equipe)}</td><td>${fmt(r.pct)}%</td>
